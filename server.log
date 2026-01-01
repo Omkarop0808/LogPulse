@@ -1,0 +1,5 @@
+2025/12/31 22:07:52 Starting LokiLite server on port 8080
+2025/12/31 22:07:52 [StreamHub] Starting hub
+2025/12/31 22:07:52 LokiLite is ready at http://localhost:8080
+2025/12/31 22:07:52 WebSocket streaming available at ws://localhost:8080/stream
+2025/12/31 22:07:52 Server error: listen tcp :8080: bind: address already in use
