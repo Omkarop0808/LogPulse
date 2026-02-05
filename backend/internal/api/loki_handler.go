@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
+	"sync"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -30,40 +32,49 @@ type LokiHandler struct {
 	errorCount   *prometheus.CounterVec
 }
 
+var (
+	lokiMetricsOnce  sync.Once
+	lokiRequestCount *prometheus.CounterVec
+	lokiLatency      *prometheus.HistogramVec
+	lokiErrorCount   *prometheus.CounterVec
+)
+
 // NewLokiHandler creates a new Loki-compatible handler
 func NewLokiHandler(idx *index.Index, reader *storage.Reader) *LokiHandler {
-	requestCount := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "loki_handler_requests_total",
-			Help: "Total number of requests to LokiHandler endpoints.",
-		},
-		[]string{"endpoint", "method"},
-	)
-	latency := prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "loki_handler_request_duration_seconds",
-			Help:    "Request latency for LokiHandler endpoints.",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"endpoint", "method"},
-	)
-	errorCount := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "loki_handler_errors_total",
-			Help: "Total number of errors in LokiHandler endpoints.",
-		},
-		[]string{"endpoint", "method"},
-	)
+	lokiMetricsOnce.Do(func() {
+		lokiRequestCount = prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "loki_handler_requests_total",
+				Help: "Total number of requests to LokiHandler endpoints.",
+			},
+			[]string{"endpoint", "method"},
+		)
+		lokiLatency = prometheus.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Name:    "loki_handler_request_duration_seconds",
+				Help:    "Request latency for LokiHandler endpoints.",
+				Buckets: prometheus.DefBuckets,
+			},
+			[]string{"endpoint", "method"},
+		)
+		lokiErrorCount = prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "loki_handler_errors_total",
+				Help: "Total number of errors in LokiHandler endpoints.",
+			},
+			[]string{"endpoint", "method"},
+		)
 
-	prometheus.MustRegister(requestCount, latency, errorCount)
+		prometheus.MustRegister(lokiRequestCount, lokiLatency, lokiErrorCount)
+	})
 
 	return &LokiHandler{
 		index:        idx,
 		reader:       reader,
 		executor:     query.NewExecutor(idx, reader),
-		requestCount: requestCount,
-		latency:      latency,
-		errorCount:   errorCount,
+		requestCount: lokiRequestCount,
+		latency:      lokiLatency,
+		errorCount:   lokiErrorCount,
 	}
 }
 
@@ -132,6 +143,12 @@ func (h *LokiHandler) QueryRange(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		endTime = time.Now()
+	}
+
+	// Validate time range
+	if !startTime.IsZero() && !endTime.IsZero() && startTime.After(endTime) {
+		WriteErrorResponse(w, http.StatusBadRequest, ErrorCodeInvalidTimeRange, "Invalid time range", "Start time must be before end time")
+		return
 	}
 
 	// Parse limit
@@ -314,19 +331,12 @@ func (h *LokiHandler) LabelValues(w http.ResponseWriter, r *http.Request) {
 	// Extract label name from URL path
 	// Path: /loki/api/v1/label/{name}/values
 	path := r.URL.Path
-	var labelName string
 
-	// Parse: /loki/api/v1/label/service/values
-	if len(path) > 20 {
-		// Find label name between /label/ and /values
-		start := 18          // len("/loki/api/v1/label/")
-		end := len(path) - 7 // Remove /values
-		if end > start {
-			labelName = path[start:end]
-		}
-	}
+	// Use strings.TrimPrefix/TrimSuffix instead of hard-coded indices
+	labelName := strings.TrimPrefix(path, "/loki/api/v1/label/")
+	labelName = strings.TrimSuffix(labelName, "/values")
 
-	if labelName == "" {
+	if labelName == "" || labelName == path {
 		WriteValidationError(w, "label", "Invalid or missing label name in URL path")
 		return
 	}
