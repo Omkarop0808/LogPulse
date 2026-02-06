@@ -2,15 +2,17 @@ package config
 
 import (
 	"os"
+	"strconv"
 
 	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
-	Server  ServerConfig  `yaml:"server"`
-	Storage StorageConfig `yaml:"storage"`
-	Ingest  IngestConfig  `yaml:"ingest"`
-	Auth    AuthConfig    `yaml:"auth"`
+	Server    ServerConfig    `yaml:"server"`
+	Storage   StorageConfig   `yaml:"storage"`
+	Ingest    IngestConfig    `yaml:"ingest"`
+	Auth      AuthConfig      `yaml:"auth"`
+	RateLimit RateLimitConfig `yaml:"rate_limit"`
 }
 
 type ServerConfig struct {
@@ -31,6 +33,15 @@ type IngestConfig struct {
 type AuthConfig struct {
 	Enabled bool   `yaml:"enabled"`
 	APIKey  string `yaml:"api_key"`
+}
+
+type RateLimitConfig struct {
+	Enabled      bool     `yaml:"enabled"`
+	RequestsPer  int      `yaml:"requests_per_minute"`
+	Burst        int      `yaml:"burst"`
+	IngestOnly   bool     `yaml:"ingest_only"`
+	WhitelistIPs []string `yaml:"whitelist_ips"`
+	BlacklistIPs []string `yaml:"blacklist_ips"`
 }
 
 func Load(path string) (*Config, error) {
@@ -56,6 +67,19 @@ func Load(path string) (*Config, error) {
 	if storagePath := os.Getenv("LOKILITE_STORAGE_PATH"); storagePath != "" {
 		cfg.Storage.Path = storagePath
 	}
+	if rateLimitEnabled := os.Getenv("LOGPULSE_RATE_LIMIT_ENABLED"); rateLimitEnabled != "" {
+		cfg.RateLimit.Enabled = rateLimitEnabled == "true"
+	}
+	if rateLimitRequestsPerMinute := os.Getenv("LOGPULSE_RATE_LIMIT_REQUESTS_PER_MINUTE"); rateLimitRequestsPerMinute != "" {
+		if val, err := strconv.Atoi(rateLimitRequestsPerMinute); err == nil {
+			cfg.RateLimit.RequestsPer = val
+		}
+	}
+	if rateLimitBurst := os.Getenv("LOGPULSE_RATE_LIMIT_BURST"); rateLimitBurst != "" {
+		if val, err := strconv.Atoi(rateLimitBurst); err == nil {
+			cfg.RateLimit.Burst = val
+		}
+	}
 
 	return &cfg, nil
 }
@@ -77,6 +101,14 @@ func DefaultConfig() *Config {
 		Auth: AuthConfig{
 			Enabled: false,
 			APIKey:  "",
+		},
+		RateLimit: RateLimitConfig{
+			Enabled:      true,
+			RequestsPer:  1000,
+			Burst:        100,
+			IngestOnly:   false, // Apply to all endpoints by default
+			WhitelistIPs: []string{},
+			BlacklistIPs: []string{},
 		},
 	}
 }
