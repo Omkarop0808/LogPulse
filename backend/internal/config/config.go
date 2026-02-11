@@ -90,13 +90,25 @@ func Load(path string) (*Config, error) {
 		}
 	}
 	if whitelist := os.Getenv("LOGPULSE_RATE_LIMIT_WHITELIST"); whitelist != "" {
-		cfg.RateLimit.WhitelistIPs = strings.Split(whitelist, ",")
+		ips := strings.Split(whitelist, ",")
+		for i := range ips {
+			ips[i] = strings.TrimSpace(ips[i])
+		}
+		cfg.RateLimit.WhitelistIPs = ips
 	}
 	if blacklist := os.Getenv("LOGPULSE_RATE_LIMIT_BLACKLIST"); blacklist != "" {
-		cfg.RateLimit.BlacklistIPs = strings.Split(blacklist, ",")
+		ips := strings.Split(blacklist, ",")
+		for i := range ips {
+			ips[i] = strings.TrimSpace(ips[i])
+		}
+		cfg.RateLimit.BlacklistIPs = ips
 	}
 	if proxies := os.Getenv("LOGPULSE_RATE_LIMIT_TRUSTED_PROXIES"); proxies != "" {
-		cfg.RateLimit.TrustedProxies = strings.Split(proxies, ",")
+		ips := strings.Split(proxies, ",")
+		for i := range ips {
+			ips[i] = strings.TrimSpace(ips[i])
+		}
+		cfg.RateLimit.TrustedProxies = ips
 	}
 
 	return &cfg, nil
