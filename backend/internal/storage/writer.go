@@ -47,11 +47,20 @@ func (w *Writer) WriteChunk(labels map[string]string, entries []models.LogEntry)
 	chunkPath := filepath.Join(dirPath, chunkID+".log")
 	metaPath := filepath.Join(dirPath, chunkID+".meta")
 
-	// Calculate time range
+	// Calculate time range by finding min/max timestamps
+	// Don't assume entries are sorted
 	var startTime, endTime time.Time
 	if len(entries) > 0 {
 		startTime = entries[0].Timestamp
-		endTime = entries[len(entries)-1].Timestamp
+		endTime = entries[0].Timestamp
+		for _, entry := range entries[1:] {
+			if entry.Timestamp.Before(startTime) {
+				startTime = entry.Timestamp
+			}
+			if entry.Timestamp.After(endTime) {
+				endTime = entry.Timestamp
+			}
+		}
 	}
 
 	// Only lock for the actual file creation and writing
